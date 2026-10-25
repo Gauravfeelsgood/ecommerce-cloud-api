@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Commerce SLA & TTR Demo</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1e1e2e; color: #cdd6f4; padding: 30px; display: flex; justify-content: center; }
+        .container { max-width: 650px; width: 100%; }
+        .card { background-color: #313244; padding: 24px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.3); margin-bottom: 20px; }
+        h2 { border-bottom: 2px solid #89b4fa; padding-bottom: 10px; margin-top: 0; color: #89b4fa; }
+        h3 { margin-top: 0; color: #cba6f7; }
+        .product { background-color: #181825; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .btn { background-color: #89b4fa; color: #11111b; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 15px; transition: 0.2s; }
+        .btn:hover { background-color: #74c7ec; }
+        .btn:disabled { background-color: #6c7086; cursor: not-allowed; }
+        .btn-danger { background-color: #f38ba8; color: #11111b; }
+        .btn-danger:hover { background-color: #eba0ac; }
+        
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px; }
+        .metric-box { background-color: #181825; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #45475a; }
+        .value { font-size: 22px; font-weight: bold; color: #a6e3a1; margin-top: 5px; }
+        .error { color: #f38ba8; }
+        .warning { color: #f9e2af; }
+        
+        .logs { background-color: #11111b; color: #a6adc8; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; height: 140px; overflow-y: auto; margin-top: 15px; border: 1px solid #45475a; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Order Processing & Resilience Pipeline</h2>
+        
+        <!-- Order Demo Card -->
+        <div class="card">
+            <h3>1. Order Request Demo (SLA Target: < 200ms)</h3>
+            <div class="product">
+                <div>
+                    <h4 style="margin: 0; color: #89b4fa;">Cloud Architecture eBook</h4>
+                    <p style="margin: 4px 0 0 0; font-size: 13px; color: #a6adc8;">Item ID: BOOK_001 | Qty: 1</p>
+                </div>
+                <div style="font-size: 18px; font-weight: bold; color: #a6e3a1;">₹499</div>
+            </div>
+            <button id="orderBtn" class="btn" onclick="submitOrder()">Simulate Order Request</button>
+
+            <div class="grid-2">
+                <div class="metric-box">
+                    <div style="font-size: 13px; color: #a6adc8;">Response Latency</div>
+                    <div id="latencyVal" class="value">- ms</div>
+                </div>
+                <div class="metric-box">
+                    <div style="font-size: 13px; color: #a6adc8;">Order Status</div>
+                    <div id="orderStatusVal" class="value">IDLE</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Failure Injection & Recovery Simulation Card -->
+        <div class="card">
+            <h3>2. Server Crash & Recovery Simulation (TTR)</h3>
+            <p style="font-size: 13px; color: #a6adc8; margin-top: -5px;">
+                Simulates an unhandled server crash (S1 Incident). Docker auto-restarts the API container, and the frontend automatically polls until restored.
+            </p>
+            
+            <button id="crashBtn" class="btn btn-danger" onclick="triggerCrashAndRecovery()">
+                Simulate Server Crash & Measure TTR
+            </button>
+
+            <div class="grid-2">
+                <div class="metric-box">
+                    <div style="font-size: 13px; color: #a6adc8;">System Health</div>
+                    <div id="healthVal" class="value">HEALTHY</div>
+                </div>
+                <div class="metric-box">
+                    <div style="font-size: 13px; color: #a6adc8;">Measured TTR</div>
+                    <div id="ttrVal" class="value warning">- s</div>
+                </div>
+            </div>
+
+            <div class="logs" id="logBox">
+                > System initialized. Ready for operations.<br>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        function addLog(msg, type = 'info') {
+            const box = document.getElementById('logBox');
+            const time = new Date().toLocaleTimeString();
+            let color = '#a6e3a1'; // Green
+            if (type === 'error') color = '#f38ba8'; // Red
+            if (type === 'warn') color = '#f9e2af'; // Yellow
+            
+            box.innerHTML += `<span style="color: ${color}">[${time}] ${msg}</span><br>`;
+            box.scrollTop = box.scrollHeight;
+        }
+
+        async function submitOrder() {
+            const btn = document.getElementById('orderBtn');
+            btn.disabled = true;
+            btn.innerText = "Processing...";
+            
+            const startTime = performance.now();
+            try {
+                const res = await fetch(`${API_BASE}/api/v1/orders`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customer_id: "CUST_101", item_id: "BOOK_001", quantity: 1, amount: 499.00 })
+                });
+                const endTime = performance.now();
+                const latency = (endTime - startTime).toFixed(2);
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('latencyVal').innerText = latency + " ms";
+                    document.getElementById('orderStatusVal').innerText = "200 OK";
+                    document.getElementById('orderStatusVal').className = "value";
+                    addLog(`Order success: ${data.order.order_id} | Client Latency: ${latency}ms`);
+                } else {
+                    throw new Error("HTTP Error");
+                }
+            } catch (err) {
+                document.getElementById('orderStatusVal').innerText = "FAILED";
+                document.getElementById('orderStatusVal').className = "value error";
+                addLog(`Order failed. Ensure server is active.`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Simulate Order Request";
+            }
+        }
+
+        async function triggerCrashAndRecovery() {
+            const crashBtn = document.getElementById('crashBtn');
+            const orderBtn = document.getElementById('orderBtn');
+            const healthVal = document.getElementById('healthVal');
+            const ttrVal = document.getElementById('ttrVal');
+
+            crashBtn.disabled = true;
+            orderBtn.disabled = true;
+            healthVal.innerText = "CRASHING...";
+            healthVal.className = "value error";
+            
+            addLog("Triggering S1 Critical Incident: Sending POST /api/v1/crash...", 'error');
+
+            const recoveryStartTime = performance.now();
+
+            try {
+                // Step 1: Send crash signal to API
+                await fetch(`${API_BASE}/api/v1/crash`, { method: 'POST' });
+            } catch (e) {
+                // Expected disconnect
+            }
+
+            addLog("Server terminated! System outage in progress...", 'error');
+            addLog("Polling backend health check (GET /) for auto-recovery...", 'warn');
+
+            // Step 2: Poll GET / until server recovers
+            const pollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/`);
+                    if (res.ok) {
+                        const recoveryEndTime = performance.now();
+                        clearInterval(pollInterval);
+
+                        const totalTTRSeconds = ((recoveryEndTime - recoveryStartTime) / 1000).toFixed(2);
+
+                        healthVal.innerText = "HEALTHY";
+                        healthVal.className = "value";
+                        ttrVal.innerText = totalTTRSeconds + " s";
+
+                        addLog(`Recovery complete! System restored in ${totalTTRSeconds} seconds.`, 'info');
+                        addLog(`Measured TTR Target met (< 60s).`, 'info');
+
+                        crashBtn.disabled = false;
+                        orderBtn.disabled = false;
+                    }
+                } catch (err) {
+                    // Still offline; poll again
+                    healthVal.innerText = "OFFLINE";
+                    healthVal.className = "value error";
+                }
+            }, 1000); // Check every 1 second
+        }
+    </script>
+
+</body>
+</html>

@@ -1,5 +1,7 @@
+import os
 import time
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 app = FastAPI(
@@ -8,18 +10,26 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Enable CORS for frontend connection
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 class OrderRequest(BaseModel):
     customer_id: str
     item_id: str
     quantity: int
     amount: float
 
-# In-memory storage for orders
 orders_db = []
 
 @app.get("/")
 def health_check():
-    """Health Check Endpoint for AWS Load Balancer / Monitoring"""
+    """Health Check Endpoint used for SLA & TTR monitoring"""
     return {
         "status": "HEALTHY",
         "service": "Order Processing API",
@@ -28,15 +38,14 @@ def health_check():
 
 @app.post("/api/v1/orders")
 def process_order(order: OrderRequest):
-    """Processes incoming customer orders (SLA Target: < 200ms)"""
+    """Processes customer orders and calculates response SLA latency"""
     start_time = time.time()
     
     if order.quantity <= 0 or order.amount <= 0:
         raise HTTPException(status_code=400, detail="Invalid order quantity or amount")
     
-    order_id = f"ORD-{len(orders_db) + 1001}"
     order_data = {
-        "order_id": order_id,
+        "order_id": f"ORD-{len(orders_db) + 1001}",
         "customer_id": order.customer_id,
         "item_id": order.item_id,
         "quantity": order.quantity,
@@ -52,3 +61,14 @@ def process_order(order: OrderRequest):
         "order": order_data,
         "response_time_ms": round(elapsed_time_ms, 2)
     }
+
+def terminate_process():
+    """Helper function to kill the process after sending the crash HTTP response"""
+    time.sleep(0.5)
+    os._exit(1)
+
+@app.post("/api/v1/crash")
+def simulate_crash(background_tasks: BackgroundTasks):
+    """Simulates an S1 Critical Failure by crashing the application server"""
+    background_tasks.add_task(terminate_process)
+    return {"message": "S1 Critical Crash initiated. Application process terminating..."}
